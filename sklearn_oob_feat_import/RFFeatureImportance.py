@@ -1,5 +1,6 @@
 from sklearn.ensemble.forest import _generate_unsampled_indices
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.metrics import r2_score, accuracy_score
 from collections import Counter
 import numpy as np
 
@@ -69,6 +70,8 @@ class PermutationImportance(object):
 
             oobScoreScrambled[i] = np.mean(scores)
 
+        # take difference between base oob score and the score for each
+        # scrambled feature
         featureImportances = np.apply_along_axis(lambda x: oobScore - x,
                                                  0, oobScoreScrambled)
 
@@ -128,7 +131,8 @@ class PermutationImportance(object):
                     oobForestPreds[ind].append(oobTreePreds[j])
         else:
             # throw error, rf is not the right class
-            pass
+            raise TypeError(
+                'rf is not an sklearn random forest class instance')
 
         # subset the original labels by the final out-of-bag indices, incase
         # some points were not included
@@ -143,14 +147,14 @@ class PermutationImportance(object):
                 ensemblePreds[i] = oobForestPreds[i].most_common(1)[0][0]
 
             # calculate the out of bag accuracy
-            return 1.0 * np.sum(yOob == ensemblePreds) / len(oobIndices)
+            return accuracy_score(yOob, ensemblePreds)
         elif type(self.rf) is RandomForestRegressor:
             # get the value prediction for each oob index
             for i in xrange(len(oobIndices)):
                 ensemblePreds[i] = np.mean(oobForestPreds[i])
 
             # calculate the out of bag MSE
-            return 'MEAN SQUARED ERROR?'
+            return r2_score(yOob, ensemblePreds)
         else:
             return None
 
@@ -189,11 +193,31 @@ if __name__ == "__main__":
     X = iris.data
     y = iris.target
 
-    rf = RandomForestClassifier()
-    rf.n_estimators = 100
-    rf.oob_score = True
-    rf.fit(X, y)
+    rfC = RandomForestClassifier()
+    rfC.n_estimators = 100
+    rfC.oob_score = True
+    rfC.fit(X, y)
 
-    oob = PermutationImportance()
-    print oob.featureImportances(rf, X, y, 5)
-    print rf.feature_importances_
+    print "#######\n--Classification on Iris DataSet--\n#######"
+    oobC = PermutationImportance()
+    print "Weighted Avg Information Gain feature importances:"
+    print rfC.feature_importances_
+    print "Permutation importances:"
+    print oobC.featureImportances(rfC, X, y, 5)
+
+    boston = datasets.load_boston()
+    X = boston.data
+    y = boston.target
+
+    rfR = RandomForestRegressor()
+    rfR.n_estimators = 100
+    rfR.oob_score = True
+    rfR.fit(X, y)
+
+    print "\n"
+    print "#######\n--Regression on Boston DataSet--\n#######"
+    oobR = PermutationImportance()
+    print "Weighted Avg Information Gain feature importances:"
+    print rfR.feature_importances_
+    print "Permutation importances:"
+    print oobR.featureImportances(rfR, X, y, 5)
