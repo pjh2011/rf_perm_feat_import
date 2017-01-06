@@ -1,4 +1,4 @@
-### PermutationImportance
+### PermutationImportance Class
 
 This class is implements the permutation importance metric for random forests, which is not implemented in scikit-learn's random forest implementations.
 
