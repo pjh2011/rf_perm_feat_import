@@ -1,0 +1,10 @@
+Metadata-Version: 1.0
+Name: sklearn-perm-feat-import
+Version: 0.1
+Summary: Random Forest Feature Importance on OOB Score Delta
+Home-page: https://github.com/pjh2011/sklearn_oob_feat_import
+Author: Peter Hughes
+Author-email: pethug210@gmail.com
+License: MIT
+Description: UNKNOWN
+Platform: UNKNOWN
