@@ -193,9 +193,7 @@ if __name__ == "__main__":
     X = iris.data
     y = iris.target
 
-    rfC = RandomForestClassifier()
-    rfC.n_estimators = 100
-    rfC.oob_score = True
+    rfC = RandomForestClassifier(n_estimators=100, oob_score=True)
     rfC.fit(X, y)
 
     print "#######\n--Classification on Iris DataSet--\n#######"
@@ -209,9 +207,7 @@ if __name__ == "__main__":
     X = boston.data
     y = boston.target
 
-    rfR = RandomForestRegressor()
-    rfR.n_estimators = 100
-    rfR.oob_score = True
+    rfR = RandomForestRegressor(n_estimators=100, oob_score=True)
     rfR.fit(X, y)
 
     print "\n"
