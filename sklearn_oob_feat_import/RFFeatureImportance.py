@@ -1,33 +1,80 @@
 from sklearn.ensemble.forest import _generate_unsampled_indices
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from collections import Counter
 import numpy as np
 
 
-class OobFeatureImportance(object):
+class PermutationImportance(object):
 
     def __init__(self):
         pass
 
-    def featureImportances(self, rf, X, y):
+    def featureImportances(self, rf, X, y, nIters=1):
         '''
+        Given a trained random forest instance, the training data, and labels
+        calculate the feature importances. Currently in scikit-learn the
+        feature importance is calculated as weighted information gain
+        associated with each feature across all trees. This class calculates
+        the feature importance as the decrease in out-of-bag score for each
+        feature, when that feature is randomly permuted. I.e. if we randomly
+        scramble a feature's values how much worse do our out of bag
+        predictions become?
+
+        Inputs:
+        rf - a trained instance of sklearn's either RandomForestClassifier or
+            RandomForestRegressor
+        X - numpy array - the data used to train the random forest instance
+        y - numpy array - the labels used to train the random forest instance
+        nIters - integer - the number of times to scramble a feature and
+            calculate the out-of-bag score. Increasing nIters will increase
+            run-time but decrease variance in results.
+
+        Outputs:
+        featureImportances - numpy array - the change in out-of-bag score
+            associated with each feature, when that feature is scrambled
         '''
 
         self.rf = rf
-        self.X = X
+        self.X = X.copy()
         self.y = y
 
+        nSamples, nFeatures = self.X.shape
+        allInd = np.arange(0, nSamples)
+
         # get the oobIndices
-        unsampledIndices = self.getOOBIndices_()
+        unsampledIndices = self._getOOBIndices()
 
         oobScoreScrambled = np.zeros(X.shape[1])
 
+        if not rf.oob_score:
+            oobScore = self._calcOOBScore(unsampledIndices)
+        else:
+            oobScore = rf.oob_score_
+
         # loop over features:
-        # #### scramble feature (maybe do this a few times?)
-        # #### calculate the new oob score and store in the numpy array
+        for i in xrange(nFeatures):
+            scores = []
 
-        return oobScoreScrambled
+            for j in xrange(nIters):
+                # #### scramble column and overwrite in initial training array
+                scrambleInd = np.random.permutation(allInd)
+                self.X[:, i] = self.X[:, i][scrambleInd]
 
-    def calcOOBScore_(self, rf, X, y, oobInd):
+                # #### calculate the new oob score and store in the numpy array
+                scores.append(self._calcOOBScore(unsampledIndices))
+
+                # #### set column back to normal
+                unscrambleInd = np.argsort(scrambleInd)
+                self.X[:, i] = self.X[:, i][unscrambleInd]
+
+            oobScoreScrambled[i] = np.mean(scores)
+
+        featureImportances = np.apply_along_axis(lambda x: oobScore - x,
+                                                 0, oobScoreScrambled)
+
+        return featureImportances
+
+    def _calcOOBScore(self, oobInd):
         '''
         Calculate the out of bag score, given a trained instance of a
         RandomForestClassifier (from sklearn), the training data, the labels,
@@ -49,36 +96,65 @@ class OobFeatureImportance(object):
 
         oobForestPreds = {}
 
-        for i, tree in enumerate(rf.estimators_):
-            # get predictions on out of bag indices for each tree
-            oobTreePreds = tree.predict(X[oobInd[i], :])
+        if type(self.rf) is RandomForestClassifier:
+            for i, tree in enumerate(self.rf.estimators_):
+                # get predictions on out of bag indices for each tree
+                oobTreePreds = tree.predict(self.X[oobInd[i], :])
 
-            # create a dictionary entry for each index in the original
-            # dataset. append the tree predictions to a Counter matching
-            # each entry
-            for j in xrange(len(oobInd[i])):
-                ind = oobInd[i][j]
+                # create a dictionary entry for each index in the original
+                # dataset. append the tree predictions to a Counter matching
+                # each entry
+                for j in xrange(len(oobInd[i])):
+                    ind = oobInd[i][j]
 
-                if ind not in oobForestPreds:
-                    oobForestPreds[ind] = Counter()
+                    if ind not in oobForestPreds:
+                        oobForestPreds[ind] = Counter()
 
-                oobForestPreds[ind].update([oobTreePreds[j]])
+                    oobForestPreds[ind].update([oobTreePreds[j]])
+        elif type(self.rf) is RandomForestRegressor:
+            for i, tree in enumerate(self.rf.estimators_):
+                # get predictions on out of bag indices for each tree
+                oobTreePreds = tree.predict(self.X[oobInd[i], :])
+
+                # create a dictionary entry for each index in the original
+                # dataset. append the tree predictions to a list matching each
+                # entry
+                for j in xrange(len(oobInd[i])):
+                    ind = oobInd[i][j]
+
+                    if ind not in oobForestPreds:
+                        oobForestPreds[ind] = []
+
+                    oobForestPreds[ind].append(oobTreePreds[j])
+        else:
+            # throw error, rf is not the right class
+            pass
 
         # subset the original labels by the final out-of-bag indices, incase
         # some points were not included
         oobIndices = np.array(oobForestPreds.keys())
-        yOob = y[oobIndices]
+        yOob = self.y[oobIndices]
 
         ensemblePreds = np.zeros(len(oobIndices))
 
-        # get the prediction for each oob index
-        for i in xrange(len(oobIndices)):
-            ensemblePreds[i] = oobForestPreds[i].most_common(1)[0][0]
+        if type(self.rf) is RandomForestClassifier:
+            # get the class prediction for each oob index
+            for i in xrange(len(oobIndices)):
+                ensemblePreds[i] = oobForestPreds[i].most_common(1)[0][0]
 
-        # calculate the out of bag accuracy
-        return 1.0 * np.sum(yOob == ensemblePreds) / len(oobIndices)
+            # calculate the out of bag accuracy
+            return 1.0 * np.sum(yOob == ensemblePreds) / len(oobIndices)
+        elif type(self.rf) is RandomForestRegressor:
+            # get the value prediction for each oob index
+            for i in xrange(len(oobIndices)):
+                ensemblePreds[i] = np.mean(oobForestPreds[i])
 
-    def getOOBIndices_(self):
+            # calculate the out of bag MSE
+            return 'MEAN SQUARED ERROR?'
+        else:
+            return None
+
+    def _getOOBIndices(self):
         '''
         Retrieve the indices of the points that were not sampled for each
         tree's bootstrap sample.
@@ -104,3 +180,20 @@ class OobFeatureImportance(object):
                 tree.random_state, nSamples)
 
         return unsampledIndices
+
+
+if __name__ == "__main__":
+    from sklearn import datasets
+
+    iris = datasets.load_iris()
+    X = iris.data
+    y = iris.target
+
+    rf = RandomForestClassifier()
+    rf.n_estimators = 100
+    rf.oob_score = True
+    rf.fit(X, y)
+
+    oob = PermutationImportance()
+    print oob.featureImportances(rf, X, y, 5)
+    print rf.feature_importances_
